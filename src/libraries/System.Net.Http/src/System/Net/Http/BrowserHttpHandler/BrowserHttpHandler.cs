@@ -42,6 +42,10 @@ namespace System.Net.Http
                 return (bool)streamingSupported.Call();
         }
 
+        public bool SupportsAutomaticDecompression => false;
+        public bool SupportsProxy => false;
+        public bool SupportsRedirectConfiguration => false;
+
         public bool UseCookies
         {
             get => throw new PlatformNotSupportedException();

@@ -33,6 +33,10 @@ namespace System.Net.Http
             }
         }
 
+        internal bool SupportsAutomaticDecompression => true;
+        internal bool SupportsProxy => true;
+        internal bool SupportsRedirectConfiguration => true;
+
         public bool UseCookies
         {
             get => _settings._useCookies;
