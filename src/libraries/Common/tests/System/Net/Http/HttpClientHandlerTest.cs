@@ -91,7 +91,7 @@ namespace System.Net.Http.Functional.Tests
                 Assert.Equal(50, handler.MaxAutomaticRedirections);
                 Assert.NotNull(handler.Properties);
                 Assert.Null(handler.Proxy);
-                Assert.True(handler.SupportsAutomaticDecompression);
+                Assert.Equal(PlatformDetection.IsNotBrowser, handler.SupportsAutomaticDecompression);
                 Assert.True(handler.UseCookies);
                 Assert.False(handler.UseDefaultCredentials);
                 Assert.True(handler.UseProxy);
@@ -105,8 +105,8 @@ namespace System.Net.Http.Functional.Tests
             {
                 Assert.Equal(64, handler.MaxResponseHeadersLength);
                 Assert.False(handler.PreAuthenticate);
-                Assert.True(handler.SupportsProxy);
-                Assert.True(handler.SupportsRedirectConfiguration);
+                Assert.Equal(PlatformDetection.IsNotBrowser, handler.SupportsProxy);
+                Assert.Equal(PlatformDetection.IsNotBrowser, handler.SupportsRedirectConfiguration);
 
                 // Changes from .NET Framework.
                 Assert.False(handler.CheckCertificateRevocationList);
