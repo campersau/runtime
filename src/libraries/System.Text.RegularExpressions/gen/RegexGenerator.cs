@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using Microsoft.CodeAnalysis;
@@ -80,9 +81,9 @@ namespace System.Text.RegularExpressions.Generator
                     {
                         try
                         {
-                            RegexTree regexTree = RegexParser.Parse(method.Pattern, method.Options | RegexOptions.Compiled, method.Culture); // make sure Compiled is included to get all optimizations applied to it
+                            RegexTree regexTree = RegexParser.Parse(method.Pattern, method.Options | RegexOptions.Compiled, method.Culture ?? CultureInfo.InvariantCulture); // make sure Compiled is included to get all optimizations applied to it
                             AnalysisResults analysis = RegexTreeAnalyzer.Analyze(regexTree);
-                            RegexMethod regexMethod = new(method.DeclaringType, method.IsProperty, method.MemberName, method.Modifiers, method.NullableRegex, method.Pattern, method.Options, method.MatchTimeout, regexTree, analysis, method.CompilationData);
+                            RegexMethod regexMethod = new(method.DeclaringType, method.IsProperty, method.MemberName, method.Modifiers, method.NullableRegex, method.Pattern, method.Options, method.MatchTimeout, method.Culture?.Name, regexTree, analysis, method.CompilationData);
 
                             // If we're unable to generate a full implementation for this regex, report a diagnostic.
                             // We'll still output a limited implementation that just caches a new Regex(...).
@@ -188,9 +189,9 @@ namespace System.Text.RegularExpressions.Generator
                 int id = 0;
 
                 // To minimize generated code in the event of duplicated regexes, we only emit one derived Regex type per unique
-                // expression/options/timeout.  A Dictionary<(expression, options, timeout), RegexMethod> is used to deduplicate, where the value of the
-                // pair is the implementation used for the key.
-                var emittedExpressions = new Dictionary<(string Pattern, RegexOptions Options, int? Timeout), RegexMethod>();
+                // expression/options/timeout/culture.  A Dictionary<(expression, options, timeout, culture), RegexMethod> is used to deduplicate, where the
+                // value of the pair is the implementation used for the key.  The culture is part of the key because it affects case-insensitive matching.
+                var emittedExpressions = new Dictionary<(string Pattern, RegexOptions Options, int? Timeout, string? CultureName), RegexMethod>();
 
                 // If we have any (RegexMethod regexMethod, string reason, CompilationData compilationData), these are regexes for which we have
                 // limited support and need to simply output boilerplate.
@@ -219,7 +220,7 @@ namespace System.Text.RegularExpressions.Generator
 
                     if (regexMethod is not null)
                     {
-                        var key = (regexMethod.Pattern, regexMethod.Options, regexMethod.MatchTimeout);
+                        var key = (regexMethod.Pattern, regexMethod.Options, regexMethod.MatchTimeout, regexMethod.CultureName);
                         if (emittedExpressions.TryGetValue(key, out RegexMethod? implementation))
                         {
                             regexMethod.IsDuplicate = true;

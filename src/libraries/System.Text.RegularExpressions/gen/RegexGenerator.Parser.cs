@@ -146,7 +146,8 @@ namespace System.Text.RegularExpressions.Generator
             //   - We try to initialize a culture using the passed in culture name to be used for case-sensitive comparisons. If
             //     the culture name is invalid, we'll emit a diagnostic.
             // - Default to use Invariant Culture if no culture name was passed in.
-            CultureInfo culture = CultureInfo.InvariantCulture;
+            // If the pattern isn't case-insensitive, the culture is irrelevant and is left null.
+            CultureInfo? culture = null;
             RegexOptions regexOptionsWithPatternOptions;
             try
             {
@@ -157,21 +158,26 @@ namespace System.Text.RegularExpressions.Generator
                 return Diagnostic.Create(DiagnosticDescriptors.InvalidRegexArguments, memberSyntax.GetLocation(), e.Message);
             }
 
-            if ((regexOptionsWithPatternOptions & RegexOptions.IgnoreCase) != 0 && !string.IsNullOrEmpty(cultureName))
+            if ((regexOptionsWithPatternOptions & RegexOptions.IgnoreCase) != 0)
             {
-                if ((regexOptions & RegexOptions.CultureInvariant) != 0)
-                {
-                    // User passed in both a culture name and set RegexOptions.CultureInvariant which causes an explicit conflict.
-                    return Diagnostic.Create(DiagnosticDescriptors.InvalidRegexArguments, memberSyntax.GetLocation(), "cultureName");
-                }
+                culture = CultureInfo.InvariantCulture;
 
-                try
+                if (!string.IsNullOrEmpty(cultureName))
                 {
-                    culture = CultureInfo.GetCultureInfo(cultureName);
-                }
-                catch (CultureNotFoundException)
-                {
-                    return Diagnostic.Create(DiagnosticDescriptors.InvalidRegexArguments, memberSyntax.GetLocation(), "cultureName");
+                    if ((regexOptions & RegexOptions.CultureInvariant) != 0)
+                    {
+                        // User passed in both a culture name and set RegexOptions.CultureInvariant which causes an explicit conflict.
+                        return Diagnostic.Create(DiagnosticDescriptors.InvalidRegexArguments, memberSyntax.GetLocation(), "cultureName");
+                    }
+
+                    try
+                    {
+                        culture = CultureInfo.GetCultureInfo(cultureName);
+                    }
+                    catch (CultureNotFoundException)
+                    {
+                        return Diagnostic.Create(DiagnosticDescriptors.InvalidRegexArguments, memberSyntax.GetLocation(), "cultureName");
+                    }
                 }
             }
 
@@ -250,10 +256,14 @@ namespace System.Text.RegularExpressions.Generator
         }
 
         /// <summary>Data about a regex directly from the GeneratedRegex attribute.</summary>
-        internal sealed record RegexPatternAndSyntax(RegexType DeclaringType, bool IsProperty, Location DiagnosticLocation, string MemberName, string Modifiers, bool NullableRegex, string Pattern, RegexOptions Options, int? MatchTimeout, CultureInfo Culture, CompilationData CompilationData);
+        internal sealed record RegexPatternAndSyntax(RegexType DeclaringType, bool IsProperty, Location DiagnosticLocation, string MemberName, string Modifiers, bool NullableRegex, string Pattern, RegexOptions Options, int? MatchTimeout, CultureInfo? Culture, CompilationData CompilationData);
 
         /// <summary>Data about a regex, including a fully parsed RegexTree and subsequent analysis.</summary>
-        internal sealed record RegexMethod(RegexType DeclaringType, bool IsProperty, string MemberName, string Modifiers, bool NullableRegex, string Pattern, RegexOptions Options, int? MatchTimeout, RegexTree Tree, AnalysisResults Analysis, CompilationData CompilationData)
+        /// <remarks>
+        /// <see cref="CultureName"/> is the name of the culture used for case-insensitive comparisons (empty for the invariant culture),
+        /// or null if the pattern contains no case-insensitive constructs and the culture is therefore irrelevant.
+        /// </remarks>
+        internal sealed record RegexMethod(RegexType DeclaringType, bool IsProperty, string MemberName, string Modifiers, bool NullableRegex, string Pattern, RegexOptions Options, int? MatchTimeout, string? CultureName, RegexTree Tree, AnalysisResults Analysis, CompilationData CompilationData)
         {
             public string? GeneratedName { get; set; }
             public bool IsDuplicate { get; set; }

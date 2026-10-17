@@ -133,11 +133,46 @@ namespace System.Text.RegularExpressions.Generator
             writer.WriteLine($"{visibility} sealed class {rm.GeneratedName} : Regex");
             writer.WriteLine($"{{");
             writer.WriteLine($"    /// <summary>Cached, thread-safe singleton instance.</summary>");
-            writer.Write($"    internal static readonly Regex Instance = ");
-            writer.WriteLine(
-                rm.MatchTimeout is not null ? $"new({Literal(rm.Pattern)}, {Literal(rm.Options)}, {GetTimeoutExpression(rm.MatchTimeout.Value)});" :
-                rm.Options != 0 ? $"new({Literal(rm.Pattern)}, {Literal(rm.Options)});" :
-                $"new({Literal(rm.Pattern)});");
+
+            string construction =
+                rm.MatchTimeout is not null ? $"new({Literal(rm.Pattern)}, {Literal(rm.Options)}, {GetTimeoutExpression(rm.MatchTimeout.Value)})" :
+                rm.Options != 0 ? $"new({Literal(rm.Pattern)}, {Literal(rm.Options)})" :
+                $"new({Literal(rm.Pattern)})";
+
+            if (rm.CultureName is null || (rm.Options & RegexOptions.CultureInvariant) != 0)
+            {
+                // The culture doesn't influence how the pattern is parsed, so the regex can be constructed directly.
+                writer.WriteLine($"    internal static readonly Regex Instance = {construction};");
+            }
+            else
+            {
+                // The Regex constructor uses CultureInfo.CurrentCulture for case-insensitive comparisons. To match the behavior
+                // of the generated implementation, construct the instance with the current culture temporarily set to the culture
+                // specified on the attribute (or the invariant culture if none was specified). The culture is created with
+                // predefinedOnly: false so that this doesn't throw in globalization-invariant mode, as only the culture's name is
+                // used to determine the case behavior.
+                string culture = rm.CultureName.Length == 0 ?
+                    "CultureInfo.InvariantCulture" :
+                    $"CultureInfo.GetCultureInfo({Literal(rm.CultureName)}, predefinedOnly: false)";
+
+                writer.WriteLine($"    internal static readonly Regex Instance = CreateInstance();");
+                writer.WriteLine($"");
+                writer.WriteLine($"    /// <summary>Creates the instance using the culture specified for case-insensitive comparisons.</summary>");
+                writer.WriteLine($"    private static Regex CreateInstance()");
+                writer.WriteLine($"    {{");
+                writer.WriteLine($"        CultureInfo originalCulture = CultureInfo.CurrentCulture;");
+                writer.WriteLine($"        CultureInfo.CurrentCulture = {culture};");
+                writer.WriteLine($"        try");
+                writer.WriteLine($"        {{");
+                writer.WriteLine($"            return {construction};");
+                writer.WriteLine($"        }}");
+                writer.WriteLine($"        finally");
+                writer.WriteLine($"        {{");
+                writer.WriteLine($"            CultureInfo.CurrentCulture = originalCulture;");
+                writer.WriteLine($"        }}");
+                writer.WriteLine($"    }}");
+            }
+
             writer.WriteLine($"}}");
         }
 

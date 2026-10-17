@@ -343,5 +343,78 @@ namespace System.Text.RegularExpressions.Tests
             Assert.Equal(re[0].Match(input).Value, re[1].Match(input).Value);
             Assert.Equal("II", re[0].Match(input).Value);
         }
+
+        public static bool SourceGeneratorSupported => RegexHelpers.AvailableEngines.Contains(RegexEngine.SourceGenerated);
+
+        [ConditionalFact(typeof(RegexCultureTests), nameof(SourceGeneratorSupported))]
+        public async Task SourceGenerator_SamePatternWithDifferentCultures_NotDeduplicated()
+        {
+            // The generator emits one implementation per unique regex. Declarations that differ only by culture
+            // must not share an implementation, as the culture affects case-insensitive matching.
+            Regex[] regexes = await RegexHelpers.GetRegexesAsync(RegexEngine.SourceGenerated,
+                ("^i$", new CultureInfo("tr-TR"), RegexOptions.IgnoreCase, null),
+                ("^i$", new CultureInfo("en-US"), RegexOptions.IgnoreCase, null),
+                ("^i$", null, RegexOptions.IgnoreCase, null),
+                ("^i$", new CultureInfo("tr-TR"), RegexOptions.IgnoreCase, null));
+
+            AssertTurkishIBehavior(regexes[0], "tr-TR");
+            AssertTurkishIBehavior(regexes[1], "en-US");
+            AssertTurkishIBehavior(regexes[2], "");
+            AssertTurkishIBehavior(regexes[3], "tr-TR");
+        }
+
+        [ConditionalTheory(typeof(RegexCultureTests), nameof(SourceGeneratorSupported))]
+        [InlineData("en-US")]
+        [InlineData("tr-TR")]
+        [InlineData("")]
+        public async Task SourceGenerator_LimitedSupport_UsesDeclaredCulture(string currentCulture)
+        {
+            // When the generator can't emit a custom implementation, it falls back to constructing a Regex at run time.
+            // That instance must use the declared culture (or the invariant culture if none was declared), regardless of
+            // the culture that is current when it's created.
+            (string Pattern, RegexOptions Options)[] limitedSupportRegexes =
+            [
+                ("^i$", RegexOptions.IgnoreCase | RegexOptions.NonBacktracking),
+                ($"^{new string('(', 41)}i{new string(')', 41)}$", RegexOptions.IgnoreCase),
+                (@"^(?:i|(x)\1)$", RegexOptions.IgnoreCase),
+            ];
+            string?[] declaredCultures = ["tr-TR", "en-US", null];
+
+            var input = new List<(string, CultureInfo?, RegexOptions?, TimeSpan?)>();
+            foreach ((string pattern, RegexOptions options) in limitedSupportRegexes)
+            {
+                foreach (string? declaredCulture in declaredCultures)
+                {
+                    input.Add((pattern, declaredCulture is null ? null : new CultureInfo(declaredCulture), options, null));
+                }
+            }
+
+            Regex[] regexes;
+            using (new ThreadCultureChange(currentCulture))
+            {
+                regexes = await RegexHelpers.GetRegexesAsync(RegexEngine.SourceGenerated, input.ToArray());
+                Assert.Equal(currentCulture, CultureInfo.CurrentCulture.Name);
+            }
+
+            for (int i = 0; i < regexes.Length; i++)
+            {
+                AssertTurkishIBehavior(regexes[i], declaredCultures[i % declaredCultures.Length] ?? "");
+            }
+        }
+
+        /// <summary>Asserts that a case-insensitive regex matching "i" matches "I" and "İ" as specified by the culture.</summary>
+        private static void AssertTurkishIBehavior(Regex regex, string cultureName)
+        {
+            (bool matchesUpperI, bool matchesUpperDottedI) = cultureName switch
+            {
+                "" => (true, false),
+                "tr-TR" => (false, true),
+                _ => (true, true),
+            };
+
+            Assert.True(regex.IsMatch("i"), $"{regex} with culture '{cultureName}' should match \"i\"");
+            Assert.Equal(matchesUpperI, regex.IsMatch("I"));
+            Assert.Equal(matchesUpperDottedI, regex.IsMatch("İ"));
+        }
     }
 }
